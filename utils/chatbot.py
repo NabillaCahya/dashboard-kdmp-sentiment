@@ -2,51 +2,28 @@ import os
 import pandas as pd
 from collections import Counter
 from dotenv import load_dotenv
+import google.generativeai as genai
 
 load_dotenv()
 
-# ── Setup Groq ───────────────────────────────────────────────
-try:
-    from groq import Groq
-    GROQ_AVAILABLE = True
-except ImportError:
-    GROQ_AVAILABLE = False
-
-_groq_client = None
-
-def _get_groq():
-    global _groq_client
-    if _groq_client is not None:
-        return _groq_client
-    if not GROQ_AVAILABLE:
-        return None
-    api_key = os.getenv("GROQ_API_KEY", "")
-    if not api_key:
-        return None
-    try:
-        _groq_client = Groq(api_key=api_key)
-        return _groq_client
-    except Exception:
-        return None
-
-def _groq_generate(prompt: str) -> str:
-    client = _get_groq()
-    if client is None:
-        return None
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1024,
-            temperature=0.7,
-        )
-        return response.choices[0].message.content
-    except Exception:
-        return None
-
-# Alias untuk kompatibilitas dengan kode lama
 def _get_gemini():
-    return _get_groq()
+    return os.getenv("GEMINI_API_KEY")
+
+# ── Setup Gemini ─────────────────────────────────────────────
+
+def _gemini_generate(prompt: str) -> str:
+    api_key = _get_gemini()
+    if not api_key:
+        return "AI tidak tersedia. Pastikan GEMINI_API_KEY sudah diset di file .env."
+    
+    try:
+        genai.configure(api_key=api_key)
+        # Pakai gemini-1.5-flash supaya anti-lelet dan ramah limit
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Gagal menghubungi Gemini: {str(e)}"
 
 
 # ════════════════════════════════════════════════════════════
@@ -246,9 +223,10 @@ Buatkan analisis dengan format TEPAT berikut:
 
 Bahasa Indonesia profesional, maksimal 4 kalimat per bagian."""
 
-    result = _groq_generate(prompt)
+    # Memanggil Gemini alih-alih Groq
+    result = _gemini_generate(prompt)
     if result:
-        return {'text': result}, 'Groq'
+        return {'text': result}, 'Gemini'
 
     return _template_insight(p), 'Template'
 
@@ -360,11 +338,15 @@ def rule_based_answer(question: str, df: pd.DataFrame):
 
 
 def ask_gemini(question: str, summary: str, history: list) -> str:
-    client = _get_groq()
-    if client is None:
-        return "AI tidak tersedia. Pastikan GROQ_API_KEY sudah diset di file .env."
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return "AI tidak tersedia. Pastikan GEMINI_API_KEY sudah diset di file .env."
 
-    system = f"""Kamu adalah asisten analisis sentimen KDMP yang membantu menjawab pertanyaan tentang data sentimen komentar TikTok terhadap program Koperasi Desa Merah Putih.
+    try:
+        genai.configure(api_key=api_key)
+
+        # Instruksi dasar untuk membatasi ruang lingkup jawaban AI
+        system_prompt = f"""Kamu adalah asisten analisis sentimen KDMP yang membantu menjawab pertanyaan tentang data sentimen komentar TikTok terhadap program Koperasi Desa Merah Putih.
 
 Jawab HANYA berdasarkan data berikut, gunakan bahasa Indonesia yang profesional:
 
@@ -375,19 +357,27 @@ Jika pertanyaan tidak berkaitan dengan data sentimen KDMP, tolak dengan sopan:
 
 Jangan karang data di luar ringkasan yang diberikan."""
 
-    messages = [{"role": "system", "content": system}]
-    for msg in history[-6:]:
-        role = "user" if msg['role'] == "user" else "assistant"
-        messages.append({"role": role, "content": msg['content']})
-    messages.append({"role": "user", "content": question})
-
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            max_tokens=512,
-            temperature=0.5,
+        # Inisialisasi model Gemini
+        model = genai.GenerativeModel(
+        model_name='gemini-2.5-flash',
+        system_instruction=system_prompt
         )
-        return response.choices[0].message.content
+
+        # Gemini memiliki format role 'user' dan 'model' (bukan 'assistant')
+        formatted_history = []
+        for msg in history[-6:]: # Ambil 6 riwayat terakhir agar konteks tetap terjaga
+            role = "user" if msg['role'] == "user" else "model"
+            formatted_history.append({"role": role, "parts": [msg['content']]})
+
+        # Memulai sesi percakapan dengan riwayat yang sudah diformat
+        chat = model.start_chat(history=formatted_history)
+
+        # Mengirim pertanyaan user ke Gemini
+        response = chat.send_message(
+            question, 
+            generation_config={"temperature": 0.5, "max_output_tokens": 512}
+        )
+        return response.text
+
     except Exception as e:
-        return f"Gagal menghubungi AI: {str(e)}"
+        return f"Gagal menghubungi Gemini: {str(e)}"

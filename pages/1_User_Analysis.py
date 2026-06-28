@@ -48,7 +48,7 @@ div[data-testid="metric-container"] {
 </style>
 """, unsafe_allow_html=True)
 
-MODEL_DIR    = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models')
+MODEL_DIR    = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'model')
 LABEL_DECODE = {0: 'positive', 1: 'neutral', 2: 'negative'}
 LABEL_INDO   = {'positive': 'Positif', 'neutral': 'Netral', 'negative': 'Negatif'}
 COLOR_MAP    = {'positive': '#2ecc71', 'neutral': '#3498db', 'negative': '#e74c3c'}

@@ -6,6 +6,7 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 from collections import Counter
 import os
+import google.generativeai as genai
 
 st.set_page_config(page_title="Dashboard Sentimen KDMP", layout="wide", initial_sidebar_state="expanded")
 
@@ -326,17 +327,26 @@ st.markdown("---")
 st.markdown('<div class="section-title">Insight & Rekomendasi AI</div>', unsafe_allow_html=True)
 st.markdown("Klik tombol di bawah untuk menghasilkan analisis mendalam dan rekomendasi dari Gemini berdasarkan keseluruhan data sentimen KDMP.")
 
-if st.button("Hasilkan Insight dengan AI", type="primary", use_container_width=True):
-    try:
-        from groq import Groq
-        from dotenv import load_dotenv
-        load_dotenv(override=True)
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise ValueError("GROQ_API_KEY tidak ditemukan di file .env")
-        client = Groq(api_key=api_key)
+# KUNCI ANTI-LIMIT: Fungsi ini dibungkus st.cache_data agar hasil respons 
+# disimpan di memori dan tidak menembak API berulang kali untuk prompt yang sama.
+@st.cache_data(show_spinner=False, ttl=3600) # Cache disimpan selama 1 jam
+def generate_insight_from_gemini(prompt_text):
+    from dotenv import load_dotenv
+    import google.generativeai as genai
+    
+    load_dotenv(override=True)
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY tidak ditemukan di file .env")
+    
+    genai.configure(api_key=api_key)
+    
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    response = model.generate_content(prompt_text)
+    return response.text
 
-        prompt = f"""Kamu adalah analis data sentimen yang berpengalaman dalam menganalisis opini publik terhadap program pemerintah Indonesia.
+if st.button("Hasilkan Insight dengan AI", type="primary", use_container_width=True):
+    prompt = f"""Kamu adalah analis data sentimen yang berpengalaman dalam menganalisis opini publik terhadap program pemerintah Indonesia.
 
 Berikut adalah data hasil analisis sentimen komentar TikTok terhadap program Koperasi Desa Merah Putih (KDMP):
 
@@ -360,18 +370,14 @@ Berdasarkan data di atas, berikan analisis dalam format berikut:
 
 Gunakan bahasa Indonesia yang profesional dan akademis."""
 
-        with st.spinner("AI sedang menganalisis data..."):
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1024,
-                temperature=0.7,
-            )
-
-        st.session_state['home_insight'] = response.choices[0].message.content
+    try:
+        with st.spinner("Gemini sedang menganalisis data..."):
+            # Memanggil fungsi yang sudah di-cache
+            insight_result = generate_insight_from_gemini(prompt)
+            st.session_state['home_insight'] = insight_result
 
     except Exception as e:
-        st.error(f"Gagal menghubungi AI: {e}")
+        st.error(f"Gagal menghubungi Gemini: {e}")
 
 if 'home_insight' in st.session_state:
     st.markdown(f"""

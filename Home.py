@@ -6,7 +6,6 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 from collections import Counter
 import os
-import google.generativeai as genai
 
 st.set_page_config(page_title="Dashboard Sentimen KDMP", layout="wide", initial_sidebar_state="expanded")
 
@@ -327,20 +326,17 @@ st.markdown("---")
 st.markdown('<div class="section-title">Insight & Rekomendasi AI</div>', unsafe_allow_html=True)
 st.markdown("Klik tombol di bawah untuk menghasilkan analisis mendalam dan rekomendasi dari Gemini berdasarkan keseluruhan data sentimen KDMP.")
 
-# KUNCI ANTI-LIMIT: Fungsi ini dibungkus st.cache_data agar hasil respons 
-# disimpan di memori dan tidak menembak API berulang kali untuk prompt yang sama.
-@st.cache_data(show_spinner=False, ttl=3600) # Cache disimpan selama 1 jam
+@st.cache_data(show_spinner=False, ttl=3600)
 def generate_insight_from_gemini(prompt_text):
     from dotenv import load_dotenv
     import google.generativeai as genai
-    
+
     load_dotenv(override=True)
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY tidak ditemukan di file .env")
-    
+
     genai.configure(api_key=api_key)
-    
     model = genai.GenerativeModel('gemini-2.5-flash')
     response = model.generate_content(prompt_text)
     return response.text
@@ -357,33 +353,57 @@ Berikut adalah data hasil analisis sentimen komentar TikTok terhadap program Kop
 
 Model terbaik yang digunakan: IndoBERT Fine-tuned (Accuracy: 91.18%, F1-Score: 91.09%)
 
-Berdasarkan data di atas, berikan analisis dalam format berikut:
+Berikan analisis dalam format JSON PERSIS berikut (tidak ada teks lain di luar JSON, jangan gunakan karakter ** atau ##):
 
-**Insight:**
-(Jelaskan 3-4 poin temuan utama dari distribusi sentimen ini. Apa yang bisa disimpulkan dari dominasi sentimen negatif? Apa implikasinya?)
+{{
+  "insight": "3-4 poin temuan utama dari distribusi sentimen ini, jelaskan apa yang bisa disimpulkan dari dominasi sentimen dan implikasinya. Tulis sebagai paragraf mengalir, bukan list bernomor.",
+  "kesimpulan": "simpulkan secara keseluruhan kondisi persepsi publik terhadap program KDMP berdasarkan data sentimen ini dalam 3-4 kalimat",
+  "rekomendasi": ["rekomendasi konkret 1", "rekomendasi konkret 2", "rekomendasi konkret 3", "rekomendasi konkret 4", "rekomendasi konkret 5"]
+}}
 
-**Kesimpulan:**
-(Simpulkan secara keseluruhan kondisi persepsi publik terhadap program KDMP berdasarkan data sentimen ini dalam 3-4 kalimat)
-
-**Rekomendasi:**
-(Berikan minimal 4 rekomendasi konkret dan spesifik — bukan hanya untuk program KDMP, tetapi juga untuk peneliti dan pemangku kebijakan — berdasarkan temuan analisis ini)
-
-Gunakan bahasa Indonesia yang profesional dan akademis."""
+Rekomendasi harus konkret dan spesifik, mencakup baik untuk pengelola program KDMP maupun untuk peneliti dan pemangku kebijakan. Bahasa Indonesia profesional dan akademis."""
 
     try:
         with st.spinner("Gemini sedang menganalisis data..."):
-            # Memanggil fungsi yang sudah di-cache
-            insight_result = generate_insight_from_gemini(prompt)
-            st.session_state['home_insight'] = insight_result
-
+            raw = generate_insight_from_gemini(prompt).strip()
+            import json, re
+            raw = re.sub(r'^```json\s*', '', raw)
+            raw = re.sub(r'^```\s*', '', raw)
+            raw = re.sub(r'\s*```$', '', raw)
+            st.session_state['home_insight'] = json.loads(raw)
     except Exception as e:
         st.error(f"Gagal menghubungi Gemini: {e}")
 
 if 'home_insight' in st.session_state:
+    result = st.session_state['home_insight']
+
     st.markdown(f"""
 <div style="background:rgba(155,89,182,0.08); border:1px solid rgba(155,89,182,0.35);
-            border-radius:12px; padding:24px 28px; color:#f4f7fa; line-height:1.9; margin-top:12px;">
-{st.session_state['home_insight'].replace(chr(10), '<br>')}
+            border-radius:12px; padding:24px 28px; color:#f4f7fa; line-height:1.8; margin-top:16px;">
+    <div style="font-weight:700; color:#9b59b6; font-size:1.05rem; margin-bottom:10px;">Insight</div>
+    {result.get('insight', '-')}
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown(f"""
+<div style="background:rgba(241,196,15,0.08); border:1px solid rgba(241,196,15,0.35);
+            border-radius:12px; padding:24px 28px; color:#f4f7fa; line-height:1.8; margin-top:16px;">
+    <div style="font-weight:700; color:#f1c40f; font-size:1.05rem; margin-bottom:10px;">Kesimpulan</div>
+    {result.get('kesimpulan', '-')}
+</div>
+""", unsafe_allow_html=True)
+
+    rekomendasi_list = result.get('rekomendasi', [])
+    rekomendasi_html = "<ol style='margin:8px 0 0 0; padding-left:20px; line-height:1.9;'>"
+    for r in rekomendasi_list:
+        rekomendasi_html += f"<li>{r}</li>"
+    rekomendasi_html += "</ol>"
+
+    st.markdown(f"""
+<div style="background:rgba(46,204,113,0.08); border:1px solid rgba(46,204,113,0.35);
+            border-radius:12px; padding:24px 28px; color:#f4f7fa; margin-top:16px;">
+    <div style="font-weight:700; color:#2ecc71; font-size:1.05rem;">Rekomendasi</div>
+    {rekomendasi_html}
 </div>
 """, unsafe_allow_html=True)
 

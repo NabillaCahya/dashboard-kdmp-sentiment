@@ -6,8 +6,21 @@ import google.generativeai as genai
 
 load_dotenv()
 
+_gemini_model = None
+
 def _get_gemini():
-    return os.getenv("GEMINI_API_KEY")
+    global _gemini_model
+    if _gemini_model is not None:
+        return _gemini_model
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
+        return None
+    try:
+        genai.configure(api_key=api_key)
+        _gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+        return _gemini_model
+    except Exception:
+        return None
 
 # ── Setup Gemini ─────────────────────────────────────────────
 
